@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title th:text="${exam.title}">Exam Page</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            background-color: #e9ecef; /* Light gray background */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        #exam-lock-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(20, 20, 20, 0.96);
+            color: #fff;
+            text-align: center;
+        }
+        #exam-lock-overlay.visible {
+            display: flex;
+        }
+
+        /* --- Student Header --- */
+        .student-header {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+        }
+        .student-pic {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #dee2e6;
+        }
+        .exam-details {
+            font-size: 0.9rem;
+            color: #495057;
+        }
+        .exam-details strong {
+            color: #212529;
+        }
+
+        /* --- Layout --- */
+        .exam-layout { display: flex; flex-wrap: wrap; gap: 20px; }
+        .question-area { flex: 3; min-width: 300px; }
+        .palette-area { flex: 1; min-width: 250px; }
+
+        /* --- Question Palette --- */
+        .question-palette {
+            position: sticky;
+            top: 20px; /* Stick to top */
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        /* --- Timer (Moved) --- */
+        .timer-display {
+            padding: 1rem;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+        }
+        .timer-display .timer-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .timer-display #timer {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #d9534f;
+            line-height: 1.2;
+        }
+
+        .palette-body { padding: 15px; }
+        .palette-header { font-weight: bold; margin-bottom: 15px; }
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 10px;
+        }
+        .q-palette-btn {
+            display: flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px;
+            border: 1px solid #ddd; border-radius: 5px; cursor: pointer;
+            background-color: #f8f9fa; font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .q-palette-btn:hover { background-color: #e2e6ea; }
+        .q-palette-btn.active {
+            background-color: #0d6efd; color: white; border-color: #0d6efd;
+            box-shadow: 0 0 5px rgba(13,110,253,0.5); transform: scale(1.05);
+        }
+        .q-palette-btn.answered {
+            background-color: #198754; color: white; border-color: #198754;
+        }
+        .q-palette-btn.active.answered {
+            background-color: #146c43; border-color: #13653f;
+        }
+
+        /* --- Question Card & Options --- */
+        .question-card {
+            display: none;
+            margin-bottom: 20px;
+            background-color: #fff;
+            border: 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .question-card.active { display: block; }
+        .question-card .card-header {
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .question-card .card-body { padding: 1.5rem; }
+        .question-card .card-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+        }
+
+        /* New Option Styling */
+        .option-container {
+            display: block;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .option-container:hover {
+            background-color: #f8f9fa;
+            border-color: #adb5bd;
+        }
+        .option-container input[type="radio"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        .option-container label {
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        .pagination-controls {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-top: 20px;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="exam-lock-overlay" class="visible">
+    <div>
+        <h2 class="mb-3">Secure Exam Mode</h2>
+        <p class="mb-4">The exam must remain in fullscreen. Switching tabs or leaving the window is not allowed.</p>
+        <div th:if="${exam.webcamMonitoringEnabled}" class="alert alert-info text-start">
+            Webcam monitoring is required for this exam. Your camera will be processed locally in your browser.
+            No webcam video is uploaded or recorded. Allow camera access and keep your face and examination screen visible.
+        </div>
+        <video th:if="${exam.webcamMonitoringEnabled}" id="webcam-preview" width="320" height="240"
+               autoplay muted playsinline class="rounded bg-dark mb-3" style="display:none;"></video>
+        <p th:if="${exam.webcamMonitoringEnabled}" id="camera-init-status" class="text-light">
+            Camera and local detection models must be ready before you can start.
+        </p>
+        <div th:if="${exam.webcamMonitoringEnabled}" id="camera-init-error" class="alert alert-danger d-none"></div>
+        <button th:if="${exam.webcamMonitoringEnabled}" type="button" id="initialize-camera-btn"
+                class="btn btn-primary btn-lg mb-2">Enable Camera and Prepare Exam</button>
+        <button type="button" id="start-exam-btn" class="btn btn-danger btn-lg">Start Exam in Fullscreen</button>
+    </div>
+</div>
+
+<div class="container my-4">
+    <div th:if="${exam.webcamMonitoringEnabled}" id="webcam-monitor-panel"
+         class="card mb-3 shadow-sm" style="display:none;"
+         th:attr="data-face-missing-ms=${proctoringFaceMissingMs},data-face-turned-ms=${proctoringFaceTurnedMs},data-face-yaw-threshold=${proctoringFaceYawThreshold},data-face-confidence=${proctoringFaceConfidence},data-object-confidence=${proctoringObjectConfidence},data-incident-cooldown-ms=${proctoringIncidentCooldownMs},data-object-scan-interval-ms=${proctoringObjectScanIntervalMs},data-object-confirmation-scans=${proctoringObjectConfirmationScans},data-object-absence-scans=${proctoringObjectAbsenceScans},data-normal-rearm-ms=${proctoringNormalRearmMs}">
+        <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+            <div>
+                <strong>Webcam monitoring is active</strong>
+                <div>Looking-away warnings: <span id="looking-warning-count">0/8</span></div>
+                <div>Prohibited-device warnings: <span id="device-warning-count">0/2</span></div>
+                <div id="proctoring-alert" class="small text-danger mt-2" aria-live="polite"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- --- NEW STUDENT/EXAM HEADER --- -->
+    <div class="student-header">
+        <div class="d-flex align-items-center">
+            <!-- Student Profile Pic -->
+            <div class="flex-shrink-0 me-3">
+                <img th:if="${student.profilePicUrl != null}"
+                     th:src="@{${student.profilePicUrl}}"
+                     alt="Profile"
+                     class="student-pic">
+                <!-- Default Pic SVG -->
+                <svg th:if="${student.profilePicUrl == null}"
+                     xmlns="http://www.w3.org/2000/svg" width="70" height="70" fill="currentColor"
+                     class="bi bi-person-circle student-pic" viewBox="0 0 16 16"
+                     style="background-color: #fff;">
+                    <path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+                    <path fill-rule="evenodd"
+                          d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z"/>
+                </svg>
+            </div>
+            <!-- Student Details -->
+            <div class="flex-grow-1">
+                <h5 class="mb-0" th:text="${student.fullName}">Student Name</h5>
+                <p>
+                    Email: <small class="text-muted" th:text="${student.username}">student@example.com</small><br>
+                    Mobile: <small class="text-muted" th:text="${student.mobileNumber}">9572181024</small>
+                </p>
+
+            </div>
+
+        </div>
+        <hr>
+        <!-- Exam Details -->
+        <div class="row exam-details">
+            <div class="col-md-4">
+                <strong>EXAM:</strong>
+                <span th:text="${exam.title}">Exam Title</span>
+            </div>
+            <div class="col-md-4">
+                <strong>TOTAL TIME:</strong>
+                <span th:text="${exam.durationInMinutes} + ' minutes'">60 minutes</span>
+            </div>
+            <div class="col-md-4">
+                <strong>TOTAL QUESTIONS:</strong>
+                <span th:text="${#lists.size(questions)}">20</span>
+            </div>
+        </div>
+    </div>
+    <!-- --- END OF NEW HEADER --- -->
+
+    <form id="exam-form" th:action="@{/exam/submit}" method="post">
+        <input type="hidden" name="examId" th:value="${exam.id}" />
+        <input type="hidden" id="terminationReason" name="terminationReason" value="" />
+
+        <div class="exam-layout">
+
+            <!-- --- Left Side: Questions --- -->
+            <div class="question-area">
+                <div th:each="question, iter : ${questions}"
+                     class="card question-card"
+                     th:id="|q-card-${iter.index}|"
+                     th:data-question-index="${iter.index}">
+
+                    <div class="card-header" th:text="|Question ${iter.count} (Marks: ${question.marks})|">
+                        Question
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text" th:text="${question.text}">Question text...</p>
+
+                        <!-- --- NEW CLICKABLE OPTIONS --- -->
+                        <div class="option-container">
+                            <label th:for="|q${question.id}_opt1|">
+                                <input class="form-check-input" type="radio" th:name="|q_${question.id}|" th:id="|q${question.id}_opt1|" value="1" required>
+                                <span th:text="${question.option1}">Option 1</span>
+                            </label>
+                        </div>
+                        <div class="option-container">
+                            <label th:for="|q${question.id}_opt2|">
+                                <input class="form-check-input" type="radio" th:name="|q_${question.id}|" th:id="|q${question.id}_opt2|" value="2">
+                                <span th:text="${question.option2}">Option 2</span>
+                            </label>
+                        </div>
+                        <div class="option-container">
+                            <label th:for="|q${question.id}_opt3|">
+                                <input class="form-check-input" type="radio" th:name="|q_${question.id}|" th:id="|q${question.id}_opt3|" value="3">
+                                <span th:text="${question.option3}">Option 3</span>
+                            </label>
+                        </div>
+                        <div class="option-container">
+                            <label th:for="|q${question.id}_opt4|">
+                                <input class="form-check-input" type="radio" th:name="|q_${question.id}|" th:id="|q${question.id}_opt4|" value="4">
+                                <span th:text="${question.option4}">Option 4</span>
+                            </label>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Pagination Buttons -->
+                <div class="pagination-controls">
+                    <button type="button" id="prev-btn" class="btn btn-secondary btn-lg">
+                        <i class="bi bi-arrow-left"></i> Previous
+                    </button>
+                    <button type="button" id="next-btn" class="btn btn-primary btn-lg">
+                        Next <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- --- Right Side: Question Palette --- -->
+            <div class="palette-area">
+                <div class="question-palette">
+                    <!-- Timer (Moved Here) -->
+                    <div class="timer-display">
+                        <div class="timer-label">Time Left</div>
+                        <div id="timer">--:--</div>
+                    </div>
+                    <!-- Palette Body -->
+                    <div class="palette-body">
+                        <div class="palette-header">Question Palette</div>
+                        <div class="palette-grid">
+                            <button type="button"
+                                    th:each="q, iter : ${questions}"
+                                    class="q-palette-btn"
+                                    th:text="${iter.count}"
+                                    th:data-question-index="${iter.index}">
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Final Submit Button -->
+                    <button type="submit" id="submit-btn" class="btn btn-success btn-lg w-100 m-3" style="width: calc(100% - 2*1rem) !important;">
+                        <i class="bi bi-check-circle-fill me-2"></i>Submit Exam
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- JS Imports -->
+<script th:src="@{/js/exam-timer.js}"></script>
+<script th:if="${exam.webcamMonitoringEnabled}" th:src="@{/js/exam-proctoring.js}" type="module"></script>
+
+<!-- Timer & Pagination Script -->
+<script th:inline="javascript">
+    document.addEventListener('DOMContentLoaded', function() {
+        const examForm = document.getElementById('exam-form');
+        const lockOverlay = document.getElementById('exam-lock-overlay');
+        const startExamBtn = document.getElementById('start-exam-btn');
+        const initializeCameraBtn = document.getElementById('initialize-camera-btn');
+        const cameraInitStatus = document.getElementById('camera-init-status');
+        const cameraInitError = document.getElementById('camera-init-error');
+        const terminationReason = document.getElementById('terminationReason');
+        const examId = [[${exam.id}]];
+        const webcamEnabled = [[${exam.webcamMonitoringEnabled}]];
+        let examStarted = false;
+        let warningCount = 0;
+        let submitted = false;
+        let lastIncidentAt = 0;
+        let timerStarted = false;
+
+        function enterFullscreen() {
+            const root = document.documentElement;
+            const request = root.requestFullscreen || root.webkitRequestFullscreen || root.msRequestFullscreen;
+            if (request) {
+                return request.call(root);
+            }
+            return Promise.reject(new Error('Fullscreen is not supported'));
+        }
+
+        function terminateExam(reason) {
+            if (submitted) return;
+            submitted = true;
+            terminationReason.value = reason;
+            const checkedAnswers = Array.from(examForm.querySelectorAll('input[type="radio"]:checked'));
+            checkedAnswers.forEach(function(answer) {
+                const savedAnswer = document.createElement('input');
+                savedAnswer.type = 'hidden';
+                savedAnswer.name = answer.name;
+                savedAnswer.value = answer.value;
+                examForm.appendChild(savedAnswer);
+            });
+            examForm.querySelectorAll('input[type="radio"]').forEach(function(answer) {
+                answer.disabled = true;
+            });
+            document.getElementById('prev-btn').disabled = true;
+            document.getElementById('next-btn').disabled = true;
+            if (window.stopExamProctoring) window.stopExamProctoring();
+            lockOverlay.innerHTML =
+                '<div><h2 class="mb-3 text-warning">Exam Terminated</h2><p id="termination-message"></p></div>';
+            lockOverlay.querySelector('#termination-message').textContent =
+                reason + ' Your examination is being submitted automatically.';
+            lockOverlay.classList.add('visible');
+            setTimeout(function() {
+                examForm.submit();
+            }, 800);
+        }
+
+        function reportViolation(reason) {
+            if (!examStarted || submitted) return;
+            const now = Date.now();
+            if (now - lastIncidentAt < 1200) return;
+            lastIncidentAt = now;
+            warningCount++;
+
+            if (warningCount >= 3) {
+                terminateExam(reason);
+                return;
+            }
+
+            const remaining = 3 - warningCount;
+            lockOverlay.innerHTML =
+                '<div><h2 class="mb-3 text-warning">Warning ' + warningCount + ' of 3</h2>' +
+                '<p>' + reason + '</p>' +
+                '<p class="mb-4">' + remaining + ' violation(s) remaining before automatic submission.</p>' +
+                '<button type="button" id="return-exam-btn" class="btn btn-danger btn-lg">Return to Fullscreen</button></div>';
+            lockOverlay.classList.add('visible');
+
+            document.getElementById('return-exam-btn').addEventListener('click', function() {
+                enterFullscreen().then(function() {
+                    lockOverlay.classList.remove('visible');
+                }).catch(function() {
+                    alert('Fullscreen is required. Warning ' + warningCount + ' of 3.');
+                });
+            });
+        }
+
+        if (initializeCameraBtn) {
+            initializeCameraBtn.addEventListener('click', async function() {
+                initializeCameraBtn.disabled = true;
+                cameraInitError.classList.add('d-none');
+                cameraInitStatus.textContent = 'Requesting camera access and loading local detection models...';
+                try {
+                    if (!window.initializeExamProctoring) {
+                        throw new Error('Local proctoring libraries could not load. Check your connection and reload the exam page.');
+                    }
+                    await window.initializeExamProctoring(examId);
+                    cameraInitStatus.textContent = 'Camera and detection models are ready. Review the live preview, then start.';
+                    startExamBtn.style.display = '';
+                } catch (error) {
+                    cameraInitError.textContent = error.message || 'Camera initialization failed. The exam cannot start.';
+                    cameraInitError.classList.remove('d-none');
+                    cameraInitStatus.textContent = 'Exam start is blocked until webcam monitoring initializes successfully.';
+                    initializeCameraBtn.disabled = false;
+                }
+            });
+        }
+
+        startExamBtn.addEventListener('click', async function() {
+            if (webcamEnabled && (!window.examProctoringReady || !window.examProctoringReady())) {
+                cameraInitError.textContent = 'Enable the camera and wait for local detection models before starting.';
+                cameraInitError.classList.remove('d-none');
+                return;
+            }
+            try {
+                await enterFullscreen();
+                const response = await fetch('/exam/' + examId + '/start', { method: 'POST' });
+                const payload = await response.json().catch(function() { return {}; });
+                if (!response.ok) throw new Error(payload.error || 'Unable to start this exam attempt.');
+                examStarted = true;
+                lockOverlay.classList.remove('visible');
+                if (webcamEnabled) {
+                    document.getElementById('webcam-monitor-panel').style.display = '';
+                    window.startExamProctoring();
+                }
+                if (!timerStarted) {
+                    timerStarted = true;
+                    var durationInMinutes = [[${exam.durationInMinutes}]];
+                    var timerDisplay = document.getElementById('timer');
+                    startTimer(durationInMinutes, timerDisplay, examForm);
+                }
+            } catch (error) {
+                if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+                if (cameraInitError) {
+                    cameraInitError.textContent = error.message || 'Fullscreen mode is required to start the exam.';
+                    cameraInitError.classList.remove('d-none');
+                } else {
+                    alert(error.message || 'Fullscreen mode is required to start the exam.');
+                }
+            }
+        });
+
+        examForm.addEventListener('submit', function() {
+            if (window.stopExamProctoring) window.stopExamProctoring();
+        });
+        window.terminateExamForProctoring = terminateExam;
+
+        document.addEventListener('fullscreenchange', function() {
+            const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (examStarted && !isFullscreen) {
+                reportViolation('You exited fullscreen mode.');
+            }
+        });
+        document.addEventListener('webkitfullscreenchange', function() {
+            const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (examStarted && !isFullscreen) {
+                reportViolation('You exited fullscreen mode.');
+            }
+        });
+        document.addEventListener('visibilitychange', function() {
+            if (examStarted && document.hidden) {
+                reportViolation('You switched tabs or left the exam window.');
+            }
+        });
+        window.addEventListener('blur', function() {
+            if (examStarted && document.hasFocus() === false) {
+                reportViolation('You left the exam window.');
+            }
+        });
+
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('copy', event => event.preventDefault());
+        document.addEventListener('cut', event => event.preventDefault());
+        document.addEventListener('paste', event => event.preventDefault());
+        document.addEventListener('dragstart', event => event.preventDefault());
+        document.addEventListener('selectstart', event => event.preventDefault());
+        document.addEventListener('keydown', function(event) {
+            const key = event.key.toLowerCase();
+            const blocked =
+                key === 'f12' ||
+                key === 'f5' ||
+                event.key === 'PrintScreen' ||
+                (event.ctrlKey && ['c', 'x', 'v', 'u', 'p', 's', 'a', 'r'].includes(key)) ||
+                (event.metaKey && ['c', 'x', 'v', 'a'].includes(key)) ||
+                (event.altKey && (key === 'arrowleft' || key === 'arrowright')) ||
+                (event.ctrlKey && event.shiftKey && ['i', 'j', 'c'].includes(key));
+            if (blocked) event.preventDefault();
+        });
+
+        window.addEventListener('beforeunload', function(event) {
+            if (examStarted && !submitted) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        });
+
+        // --- PAGINATION SETUP ---
+        const questions = document.querySelectorAll('.question-card');
+        const paletteBtns = document.querySelectorAll('.q-palette-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        let currentQuestionIndex = 0;
+        const totalQuestions = questions.length;
+
+        function showQuestion(index) {
+            if (index < 0 || index >= totalQuestions) return;
+            questions.forEach(q => q.classList.remove('active'));
+            const newQuestion = document.getElementById('q-card-' + index);
+            if (newQuestion) newQuestion.classList.add('active');
+            paletteBtns.forEach(btn => btn.classList.remove('active'));
+            const newPaletteBtn = document.querySelector(`.q-palette-btn[data-question-index="${index}"]`);
+            if (newPaletteBtn) newPaletteBtn.classList.add('active');
+            currentQuestionIndex = index;
+            prevBtn.disabled = (currentQuestionIndex === 0);
+            nextBtn.disabled = (currentQuestionIndex === totalQuestions - 1);
+        }
+
+        nextBtn.addEventListener('click', () => showQuestion(currentQuestionIndex + 1));
+        prevBtn.addEventListener('click', () => showQuestion(currentQuestionIndex - 1));
+
+        paletteBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const index = parseInt(btn.getAttribute('data-question-index'));
+                showQuestion(index);
+            });
+        });
+
+        // Mark question as 'answered' in the palette
+        const allRadioButtons = document.querySelectorAll('input[type="radio"]');
+        allRadioButtons.forEach(radio => {
+            radio.addEventListener('change', function() {
+                const questionCard = this.closest('.question-card');
+                const index = questionCard.getAttribute('data-question-index');
+                const paletteBtn = document.querySelector(`.q-palette-btn[data-question-index="${index}"]`);
+                if (paletteBtn) {
+                    paletteBtn.classList.add('answered');
+                }
+            });
+        });
+
+        // Initial State
+        showQuestion(0);
+    });
+</script>
+
+</body>
+</html>
