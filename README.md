@@ -187,11 +187,9 @@ Password : password
 
 ---
 
-# 🔐 Default Admin User
+# Admin Account Configuration
 
-| Username | Password |
-|---------|----------|
-| admin | adminpass |
+For production, set ADMIN_USERNAME and ADMIN_PASSWORD as environment variables before the first startup. Do not commit credentials.
 
 ---
 

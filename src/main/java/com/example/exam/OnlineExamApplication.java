@@ -3,10 +3,12 @@ package com.example.exam;
 import com.example.exam.model.User;
 import com.example.exam.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @SpringBootApplication
@@ -19,7 +21,8 @@ public class OnlineExamApplication {
 
 	//  will run once when the application starts
 	@Bean
-	CommandLineRunner createAdminUser(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+	@Profile("!prod")
+	CommandLineRunner createLocalAdminUser(UserRepository userRepository, PasswordEncoder passwordEncoder) {
 		return args -> {
 			String adminUsername = "admin";
 
@@ -33,9 +36,25 @@ public class OnlineExamApplication {
 				adminUser.setFullName("Admin");
 
 				userRepository.save(adminUser);
-				System.out.println(">>> Admin user created: admin / adminpass <<<");
-			} else {
-				System.out.println(">>> Admin user 'admin' already exists. <<<");
+			}
+		};
+	}
+
+	@Bean
+	@Profile("prod")
+	CommandLineRunner createProductionAdminUser(
+			UserRepository userRepository,
+			PasswordEncoder passwordEncoder,
+			@Value("${ADMIN_USERNAME}") String adminUsername,
+			@Value("${ADMIN_PASSWORD}") String adminPassword) {
+		return args -> {
+			if (userRepository.findByUsername(adminUsername).isEmpty()) {
+				User adminUser = new User();
+				adminUser.setUsername(adminUsername);
+				adminUser.setPassword(passwordEncoder.encode(adminPassword));
+				adminUser.setRole("ROLE_ADMIN");
+				adminUser.setFullName("Admin");
+				userRepository.save(adminUser);
 			}
 		};
 	}
